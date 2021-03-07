@@ -1,7 +1,7 @@
 from party import Party
 from voter import Voter
 from tracker import Tracker
-from display import Display
+
 from log import Log
 from datetime import datetime
 
@@ -17,7 +17,7 @@ class Simulation:
         self.parties = []
         self.log = Log("simulation.log")
         self.tracker = Tracker(self)
-        self.display = Display(self)
+        
 
     def generate_parties(self, n):
         for i in range(1,n+1):
