@@ -1,0 +1,288 @@
+import streamlit as st
+import numpy as np
+
+import matplotlib.pyplot as plt
+from sklearn import datasets
+from sklearn.model_selection import train_test_split
+
+from sklearn.decomposition import PCA
+from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.ensemble import RandomForestClassifier
+import plotly.express as px
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, confusion_matrix
+import seaborn as sns
+import xgboost as xgb
+from xgboost.sklearn import XGBClassifier
+
+
+from sklearn.metrics import accuracy_score
+import pandas as pd
+import shap
+
+
+st.title('Demo for Interactive ML by Yulu')
+
+st.write("""
+## Visually Explore Machine Learning Prediction
+""")
+
+from enum import Enum
+from io import BytesIO, StringIO
+from typing import Union
+
+import pandas as pd
+import streamlit as st
+
+STYLE = """
+<style>
+img {
+    max-width: 100%;
+}
+</style>
+"""
+
+FILE_TYPES = ["csv",'xlsx']
+
+
+
+
+
+def get_dataset(upload_file,name):
+    if upload_file is not None:
+        df= pd.read_csv(upload_file, encoding="utf8")
+        # replace all non alphanumeric column names to avoid lgbm issue
+        df.columns = [
+            "".join(c if c.isalnum() else "_" for c in str(x)) for x in df.columns
+        ]
+    if name == 'Iris':
+        data = datasets.load_iris()
+
+    else:
+        data = datasets.load_wine()
+
+    X = data.data
+    y = data.target
+    return X, y
+
+
+dataset_name = st.sidebar.selectbox(
+    'Select Dataset',
+    ('Iris', 'Wine')
+)
+
+upload_file = st.sidebar.file_uploader("Or Upload file", type=FILE_TYPES)
+
+st.set_option('deprecation.showfileUploaderEncoding', False)
+
+X, y = get_dataset(upload_file,dataset_name)
+st.write(f"## {dataset_name} Dataset")
+
+
+
+# def datapro(name):
+
+def getdf(name):
+    if dataset_name =='Iris':
+
+         data = datasets.load_iris()
+         df = pd.DataFrame(data.data, columns=['Sepal Length',
+                                         'Sepal Width',
+                                         'Petal Length',
+                                          'Petal Width'])
+         df['species'] = 'Setosa'
+         df.loc[50:100, 'species'] = 'Versicolor'
+         df.loc[100:150, 'species'] = 'Virginica'
+         # if st.checkbox('Show df'):
+         #     st.write(df)
+
+    if dataset_name == 'Wine':
+            data = datasets.load_wine()
+            df= pd.DataFrame(data.data, columns=['Alcohol', 'Malic_Acid', 'Ash',
+                                                 'Alcalinity_Of_Ash', 'Magnesium',
+                                                 'Total_Phenols', 'Flavanoids',
+                                                 'Nonflavanoid_Phenols', 'Proanthocyanins',
+                                                 'Color_Intensity', 'Hue',
+                                                 'Od280/Od315_Of_Diluted_Wines', 'Proline'])
+            df['Class']='Class 1'
+            df.loc[60:130, 'Class'] = 'Class 2'
+            df.loc[130:178, 'Class'] = 'Class 3'
+
+
+
+    return df
+
+df=getdf(dataset_name)
+
+st.write('Shape of dataset:', X.shape)
+st.write('The class will be predicted from dataset', df.iloc[:,-1].unique())
+
+if st.sidebar.checkbox('Preview dataframe'):
+    st.sidebar.dataframe(df)
+
+classifier_name = st.sidebar.selectbox(
+    'Select classifier(# incorporate more classifier, only report the most accurate one)',
+    ('XGBoost','Random Forest')
+)
+
+# if it is Categorical data, there is the need to Encoding
+# le = LabelEncoder()
+# y = le.fit_transform(y.flatten())
+
+
+# if st.checkbox('Show raw data'):
+#         st.subheader('Raw data')
+#         load_state = st.text('Loading Data..')
+#         st.write(get_dataset(dataset_name))
+#         load_state.text('Loading Completed!')
+
+########
+# HIST #
+########
+
+
+
+st.subheader('Feature Histogram')
+if dataset_name =='Iris':
+ feature = st.selectbox('Choose the feature',['Sepal Length',
+                                     'Sepal Width',
+                                     'Petal Length',
+                                      'Petal Width'])
+
+ fig2 = px.histogram(df, x=feature, color="species", marginal="rug")
+ st.plotly_chart(fig2)
+
+if dataset_name == 'Wine':
+    feature = st.selectbox('Choose the feature', ['Alcohol', 'Malic_Acid', 'Ash',
+                                             'Alcalinity_Of_Ash', 'Magnesium',
+                                             'Total_Phenols', 'Flavanoids',
+                                             'Nonflavanoid_Phenols', 'Proanthocyanins',
+                                             'Color_Intensity', 'Hue',
+                                             'Od280/Od315_Of_Diluted_Wines', 'Proline'])
+    fig3 = px.histogram(df, x=feature, color="Class", marginal="rug")
+    st.plotly_chart(fig3)
+
+def add_parameter_ui(clf_name):
+    params = dict()
+    if clf_name == 'XGBoost':
+        max_depth = st.sidebar.slider('max_depth', 2, 15)
+        params['max_depth'] = max_depth
+        # learning_rate =st.sidebar.slider('learning_rate',0, 0.5,0.1)
+        # params['learning_rate']= learning_rate
+        n_estimators = st.sidebar.slider('n_estimators', 1, 100)
+        params['n_estimators'] = n_estimators
+
+    else:
+        max_depth = st.sidebar.slider('max_depth', 2, 15)
+        params['max_depth'] = max_depth
+        n_estimators = st.sidebar.slider('n_estimators', 1, 100)
+        params['n_estimators'] = n_estimators
+    return params
+
+params = add_parameter_ui(classifier_name)
+
+def get_classifier(clf_name, params):
+    clf = None
+    if clf_name == 'XGBoost':
+        clf = XGBClassifier(
+                         # learning_rate = params['learning_rate'],
+                         n_estimators=params['n_estimators'],
+                         max_depth= params['max_depth'])
+
+    else:
+        clf = clf = RandomForestClassifier(n_estimators=params['n_estimators'],
+            max_depth=params['max_depth'], random_state=1234)
+    return clf
+
+clf = get_classifier(classifier_name, params)
+
+
+
+#### CLASSIFICATION ####
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=1234)
+
+clf.fit(X_train, y_train)
+y_pred = clf.predict(X_test)
+
+acc = accuracy_score(y_test, y_pred)
+
+st.sidebar.markdown(f' ### Classifier = {classifier_name}')
+
+
+#### PLOT DATASET ####
+# Project the data onto the 2 primary principal components
+pca = PCA(2)
+X_projected = pca.fit_transform(X)
+
+x1 = X_projected[:, 0]
+x2 = X_projected[:, 1]
+
+fig = plt.figure()
+plt.scatter(x1, x2,
+        c=y, alpha=0.8,
+        cmap='viridis')
+
+plt.xlabel('Principal Component 1')
+plt.ylabel('Principal Component 2')
+plt.colorbar()
+
+#plt.show()
+st.sidebar.markdown('### Principal Component Analysis Graph')
+st.sidebar.pyplot()
+
+
+def show_global_interpretation_shap(X_train, clf):
+    """show most important features via permutation importance in SHAP"""
+
+
+
+def show_perf_metrics(y_test, pred):
+    """show model performance metrics such as classification report or confusion matrix"""
+    report = classification_report(y_test, pred, output_dict=True)
+    st.dataframe(pd.DataFrame(report).round(1).transpose())
+    conf_matrix = confusion_matrix(y_test, pred, list(set(y_test)))
+    sns.set(font_scale=1.4)
+    sns.heatmap(
+        conf_matrix,
+        square=True,
+        annot=True,
+        annot_kws={"size": 15},
+        cmap="YlGnBu",
+        cbar=False,
+    )
+    st.pyplot()
+
+
+st.write('### Classification report')
+show_perf_metrics(y_test, y_pred)
+
+
+st.write("Most important features")
+
+
+def plot_feature_importance(importance,names,model_type):
+
+    #Create arrays from feature importance and feature names
+    feature_importance = np.array(importance)
+    feature_names = np.array(names)
+
+    #Create a DataFrame using a Dictionary
+    data={'feature_names':feature_names,'feature_importance':feature_importance}
+    fi_df = pd.DataFrame(data)
+
+    #Sort the DataFrame in order decreasing feature importance
+    fi_df.sort_values(by=['feature_importance'], ascending=False,inplace=True)
+
+    #Define size of bar plot
+    plt.figure(figsize=(10,8))
+    #Plot Searborn bar chart
+    sns.barplot(x=fi_df['feature_importance'], y=fi_df['feature_names'])
+    #Add chart labels
+    plt.title(model_type + ' FEATURE IMPORTANCE')
+    plt.xlabel('FEATURE IMPORTANCE')
+    plt.ylabel('FEATURE NAMES')
+    st.pyplot()
+
+plot_feature_importance(clf.feature_importances_,df.iloc[:,:-1].columns,classifier_name)
